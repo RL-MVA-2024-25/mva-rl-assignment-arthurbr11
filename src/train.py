@@ -104,7 +104,7 @@ class ProjectAgent:
 
     def load(self,path="agent.pkl"):
         # get the folder of the folder 
-        if self.device == 'cpu':
+        if self.device == torch.device('cpu'):
             self.model.load_state_dict(torch.load(os.path.join(os.path.dirname(os.path.dirname(__file__)), path), map_location=torch.device('cpu')))
         else:
             self.model.load_state_dict(torch.load(os.path.join(os.path.dirname(os.path.dirname(__file__)), path)))
