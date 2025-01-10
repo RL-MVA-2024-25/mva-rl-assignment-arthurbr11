@@ -104,7 +104,10 @@ class ProjectAgent:
 
     def load(self,path="agent.pkl"):
         # get the folder of the folder 
-        self.model.load_state_dict(torch.load(os.path.join(os.path.dirname(os.path.dirname(__file__)), path)))
+        if self.device == 'cpu':
+            self.model.load_state_dict(torch.load(os.path.join(os.path.dirname(os.path.dirname(__file__)), path), map_location=torch.device('cpu')))
+        else:
+            self.model.load_state_dict(torch.load(os.path.join(os.path.dirname(os.path.dirname(__file__)), path)))
     
     def gradient_step(self):
         if len(self.memory) > self.batch_size:
