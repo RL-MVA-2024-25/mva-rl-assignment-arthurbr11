@@ -7,7 +7,7 @@ import torch.nn as nn
 from copy import deepcopy
 import random
 import os
-from evaluate import evaluate_HIV_population
+from evaluate import evaluate_HIV_population, evaluate_HIV
 env = TimeLimit(
     env=HIVPatient(domain_randomization=True), max_episode_steps=200
 )  # The time wrapper limits the number of steps in an episode at 200.
@@ -25,14 +25,14 @@ env = TimeLimit(
 config = {'nb_actions': env.action_space.n,
           'learning_rate': 0.001,
           'gamma': 0.95,
-          'buffer_size': 1000000,
+          'buffer_size': 100000,
           'epsilon_min': 0.01,
           'epsilon_max': 1.,
-          'epsilon_decay_period': 10000,
-          'epsilon_delay_decay': 50,
-          'batch_size': 20,
-          'gradient_steps': 1,
-          'update_target_freq': 50,
+          'epsilon_decay_period': 20000,
+          'epsilon_delay_decay': 100,
+          'batch_size': 200,
+          'gradient_steps': 5,
+          'update_target_freq': 900,
           'criterion': torch.nn.SmoothL1Loss() }
 
 class ReplayBuffer:
@@ -66,9 +66,9 @@ class ProjectAgent:
                           nn.ReLU(),
                           nn.Linear(nb_neurons, nb_neurons),
                           nn.ReLU(), 
-                          nn.Linear(nb_neurons, nb_neurons),
+                          nn.Linear(nb_neurons, nb_neurons//2),
                           nn.ReLU(), 
-                          nn.Linear(nb_neurons, nb_neurons),
+                          nn.Linear(nb_neurons//2, nb_neurons),
                           nn.ReLU(), 
                           nn.Linear(nb_neurons, nb_neurons),
                           nn.ReLU(), 
@@ -104,11 +104,8 @@ class ProjectAgent:
 
     def load(self,path="agent.pkl"):
         # get the folder of the folder 
-        if self.device == torch.device('cpu'):
-            self.model.load_state_dict(torch.load(os.path.join(os.path.dirname(os.path.dirname(__file__)), path), map_location=torch.device('cpu')))
-        else:
-            self.model.load_state_dict(torch.load(os.path.join(os.path.dirname(os.path.dirname(__file__)), path)))
-    
+        self.model.load_state_dict(torch.load(os.path.join(os.path.dirname(os.path.dirname(__file__)), path), map_location=self.device))
+        
     def gradient_step(self):
         if len(self.memory) > self.batch_size:
             X, A, R, Y, D = self.memory.sample(self.batch_size)
@@ -127,6 +124,7 @@ class ProjectAgent:
         state, _ = env.reset()
         epsilon = self.epsilon_max
         step = 0
+        prev_score_pop = 0
         prev_score = 0
         while episode < max_episode:
 
@@ -158,21 +156,28 @@ class ProjectAgent:
             if done or trunc:
                 episode += 1
                 episode_return.append(episode_cum_reward)
-                score_agent_dr =  evaluate_HIV_population(agent=self, nb_episode=2)
+                score_agent_pop =  evaluate_HIV_population(agent=self, nb_episode=1)
+                score_agent = evaluate_HIV(agent=self, nb_episode=1)
 
                 print("Episode ", '{:2d}'.format(episode), 
                         ", epsilon ", '{:6.2f}'.format(epsilon), 
                         ", batch size ", '{:4d}'.format(len(self.memory)), 
                         ", ep return ", '{:4.1f}'.format(episode_cum_reward), 
-                        ", score agent dr ", '{:4.1f}'.format(score_agent_dr),
+                        ", score agent pop ", '{:.1e}'.format(score_agent_pop),
+                        ", score agent ", '{:.1e}'.format(score_agent),
                         sep='')
                 state, _ = env.reset()
                 episode_cum_reward = 0
-                if score_agent_dr > prev_score: 
-                    prev_score = score_agent_dr
-                    self.best_eval_model.load_state_dict(self.model.state_dict())
-                    
-                if step % 50:
+                if score_agent_pop > prev_score_pop: 
+                    if (prev_score_pop > 2e10 and score_agent > prev_score):
+                        prev_score = score_agent
+                        prev_score_pop = score_agent_pop
+                        self.best_eval_model.load_state_dict(self.model.state_dict())
+                    elif prev_score_pop<2e10:
+                        prev_score = score_agent
+                        prev_score_pop = score_agent_pop
+                        self.best_eval_model.load_state_dict(self.model.state_dict())  
+                if episode % 20 ==0:
                     self.save("agent.pkl")
             else:
                 state = next_state
@@ -181,5 +186,5 @@ class ProjectAgent:
 
 if __name__ == "__main__":
     agent = ProjectAgent()
-    agent.train(env, 300)
+    agent.train(env, 200)
     agent.save("agent.pkl")
